@@ -30,9 +30,13 @@ class BotDB(Connection):
     def __init__(self, path: str = "./bot/file.db", *args, **kwargs):
         Connection.__init__(self, path, timeout=10, isolation_level=None, *args, **kwargs)
 
-    __last_tmp_entity_id_subquery__: str = "SELECT last_tmp_entity_id FROM updates WHERE chat_id==? AND id==?"
-    __last_tmp_question_id_subquery__: str = "SELECT last_tmp_question_id FROM updates WHERE chat_id==? AND id==?"
     __last_update_id_subquery__: str = "SELECT last_update_id FROM users WHERE chat_id==?"
+    __last_tmp_entity_id_subquery__: str = "SELECT last_tmp_entity_id FROM updates " \
+                                           "WHERE chat_id==? AND " \
+                                           "id==(SELECT last_update_id FROM users WHERE chat_id==?)"
+    __last_tmp_question_id_subquery__: str = "SELECT last_tmp_question_id FROM updates " \
+                                             "WHERE chat_id==? AND " \
+                                             "id==(SELECT last_update_id FROM users WHERE chat_id==?)"
 
     def begin_transaction(self):
         self.execute("BEGIN TRANSACTION")
@@ -89,7 +93,7 @@ class BotDB(Connection):
                      (last_action, datetime.now(), chat_id))
 
     def add_user(self, chat_id: int, last_action: str):
-        self.execute("INSERT OR IGNORE INTO users(chat_id, last_action, session_date, game_started, last_update_id) "
+        self.execute("INSERT INTO users(chat_id, last_action, session_date, game_started, last_update_id) "
                      "VALUES(?, ?, ?, ?, 0)", (chat_id, last_action, datetime.now(), 0))
 
     def set_theme(self, chat_id: int, last_action: str, theme: str):
@@ -229,83 +233,86 @@ class BotDB(Connection):
         #self.commit()
 
     def get_user_updates(self) -> dict:  # dict[str, dict[str, list[tuple[...]]]]
-        themes_and_chat_ids = "SELECT chat_id, theme FROM updates WHERE is_complete==1 ORDER BY theme"
+        themes_and_chat_ids = "SELECT theme, chat_id FROM updates WHERE is_complete==1 ORDER BY theme"
         themes_and_chat_ids = self.execute(themes_and_chat_ids).fetchall()
 
-        def result_item_template(theme: str) -> dict:
+        def result_item_template() -> dict:
             return {
-                theme: {
-                    "modified_answers": list(),
+                    "mod_answers": list(),
                     "new_entities": list(),
                     "new_questions": list(),
                     "new_answers": list(),
                     "pop_changes": list()
-                }
             }
 
         result = dict()
-        themes = list()
-        result_item = theme_item = dict()
+        themes = dict()
+        result_item = result_item_template()
+        theme_item = list()
         current_theme = None
+        i = 0
+        max_i = len(themes_and_chat_ids) - 1
+
         for theme, chat_id in themes_and_chat_ids:
             if current_theme is None:
                 current_theme = theme
-                theme_item = {current_theme: list()}
-                result_item = result_item_template(current_theme)
 
-            elif current_theme != theme:
-                themes.append(theme_item)
+            theme_item.append(str(chat_id))
+
+            if current_theme != theme or i >= max_i:
+                themes[current_theme] = theme_item
                 result[current_theme] = result_item
-                current_theme = theme
-                theme_item = {current_theme: list()}
-                result_item = result_item_template(current_theme)
 
-            theme_item[current_theme].append(chat_id)
+                current_theme = theme
+                theme_item = list()
+                result_item = result_item_template()
+
+            i += 1
 
         pop_changes = "SELECT COUNT(entity_id) as pop_change, entity_id " \
                       "FROM new_entities " \
-                      "WHERE chat_id IN ({}) AND theme==? AND entity_id IS NOT NULL"
+                      "WHERE chat_id IN ({}) AND entity_id IS NOT NULL"
 
         distinct_names = "SELECT DISTINCT name " \
                          "FROM new_entities " \
-                         "WHERE chat_id IN ({}) AND entity_id IS NOT NULL AND theme==?"
+                         "WHERE chat_id IN ({}) AND entity_id IS NULL"
 
         new_entities = "SELECT e.name, e.description " \
                        f"FROM ({distinct_names}) d " \
                        "JOIN new_entities e " \
                        "ON e.name==d.name " \
-                       "GROUP BY name"
+                       "GROUP BY e.name"
 
         distinct_texts = "SELECT DISTINCT text " \
                          "FROM new_questions " \
-                         "WHERE chat_id IN ({}) AND question_id IS NULL AND theme==?"
+                         "WHERE chat_id IN ({}) AND question_id IS NULL"
 
         new_entities_ids = "SELECT e.tmp_entity_id AS entity_id, e.name AS name " \
                            "FROM new_entities e " \
                            f"JOIN ({distinct_names}) d " \
                            "ON e.name==d.name " \
-                           "GROUP BY name"
+                           "GROUP BY e.name"
 
         new_question_ids = "SELECT q.tmp_question_id AS question_id, q.text AS text " \
                            "FROM new_questions q " \
                            f"JOIN ({distinct_texts}) d " \
                            "ON q.text==d.text " \
-                           "GROUP BY text"
+                           "GROUP BY q.text"
 
         new_answers = "SELECT e.name AS name, e.entity_id AS entity_id, q.question_id AS question_id, " \
                       "q.text AS text, a.answer_value AS answer_value " \
-                      "FROM new_answers a" \
+                      "FROM new_answers a " \
                       f"JOIN ({new_entities_ids}) e " \
                       "ON e.entity_id==a.tmp_entity_id " \
                       f"JOIN ({new_question_ids}) q " \
                       "ON q.question_id==a.tmp_question_id " \
-                      "GROUP BY entity_id, question_id"
+                      "GROUP BY e.entity_id, q.question_id"
 
         new_answers_avg = "SELECT n.name AS name, n.text AS text, AVG(a.answer_value) AS answer_value " \
                           "FROM new_answers a " \
                           f"JOIN ({new_answers}) n " \
                           "ON n.question_id==a.tmp_question_id AND n.entity_id==a.tmp_entity_id " \
-                          "GROUP BY name, text"
+                          "GROUP BY n.name, n.text"
 
         distinct_existing_answers = "SELECT DISTINCT entity_id, question_id " \
                                     "FROM new_answers " \
@@ -316,17 +323,16 @@ class BotDB(Connection):
                       "FROM new_answers a " \
                       f"JOIN ({distinct_existing_answers}) d " \
                       "ON a.question_id==d.question_id AND a.entity_id==d.entity_id " \
-                      "GROUP BY entity_id, question_id"
+                      "GROUP BY a.entity_id, a.question_id"
 
-        for theme, ids in themes:
+        for theme, ids in themes.items():
             chat_ids = ", ".join(ids)
 
-            result[theme]["pop_changes"] = self.execute(pop_changes.format(chat_ids), (theme,)).fetchall()
-            result[theme]["new_entities"] = self.execute(new_entities.format(chat_ids), (theme,)).fetchall()
-            result[theme]["new_questions"] = self.execute(distinct_texts.format(chat_ids), (theme,)).fetchall()
-            result[theme]["new_answers"] = self.execute(new_answers_avg.format(chat_ids, chat_ids),
-                                                        (theme,theme)).fetchall()
-            result[theme]["modified_answers"] = self.execute(mod_answers.format(chat_ids), (theme,)).fetchall()
+            result[theme]["pop_changes"] = self.execute(pop_changes.format(chat_ids)).fetchall()
+            result[theme]["new_entities"] = self.execute(new_entities.format(chat_ids)).fetchall()
+            result[theme]["new_questions"] = self.execute(distinct_texts.format(chat_ids)).fetchall()
+            result[theme]["new_answers"] = self.execute(new_answers_avg.format(chat_ids, chat_ids)).fetchall()
+            result[theme]["mod_answers"] = self.execute(mod_answers.format(chat_ids)).fetchall()
 
         self.clear_all_updates()
 
@@ -336,9 +342,9 @@ class BotDB(Connection):
     # updates
     def add_update(self, chat_id: int, last_action: str):
         self.increment_update_id(chat_id)
-        self.execute("INSERT INTO updates(id, chat_id, last_tmp_entity_id, last_tmp_question_id) "
-                     f"VALUES(({BotDB.__last_update_id_subquery__}), ?, ?, ?)",
-                     (chat_id, chat_id, 0, 0))
+        self.execute("INSERT INTO updates(id, chat_id, last_tmp_entity_id, last_tmp_question_id, is_complete) "
+                     f"VALUES(({BotDB.__last_update_id_subquery__}), ?, ?, ?, ?)",
+                     (chat_id, chat_id, 0, 0, 0))
         self.update_last_session_and_last_action(chat_id, last_action)
 
     def set_update_theme(self, chat_id: int, theme: str = None):
@@ -391,7 +397,7 @@ class BotDB(Connection):
         return self.execute(BotDB.__last_tmp_question_id_subquery__, (chat_id, chat_id)).fetchone()[0]
 
     def increment_last_tmp_question_id(self, chat_id: int):
-        self.execute("UPDATE updates SET last_tmp_question_id=last_tmp_question_id-1 "
+        self.execute("UPDATE updates SET last_tmp_question_id=last_tmp_question_id+1 "
                      f"WHERE chat_id==? AND id==({BotDB.__last_update_id_subquery__})",
                      (chat_id, chat_id))
 
@@ -416,10 +422,10 @@ class BotDB(Connection):
     #
     # new_entities
     def add_entity(self, chat_id: int, last_action: str):
-        self.execute("INSERT OR IGNORE INTO new_entities(update_id, chat_id, tmp_entity_id) "
+        self.increment_last_tmp_entity_id(chat_id)
+        self.execute("INSERT INTO new_entities(update_id, chat_id, tmp_entity_id) "
                      f"VALUES(({BotDB.__last_update_id_subquery__}), ?, ({BotDB.__last_tmp_entity_id_subquery__}))",
                      (chat_id, chat_id, chat_id, chat_id))
-        self.increment_last_tmp_entity_id(chat_id)
         self.update_last_session_and_last_action(chat_id, last_action)
 
     def add_entity_existing_info(self, chat_id, last_action: str, entity_id: int):
@@ -459,10 +465,10 @@ class BotDB(Connection):
     #
     # new_questions
     def add_question(self, chat_id: int, latest_action: str):
-        self.execute("INSERT OR IGNORE INTO new_questions(update_id, chat_id, tmp_question_id) "
+        self.increment_last_tmp_question_id(chat_id)
+        self.execute("INSERT INTO new_questions(update_id, chat_id, tmp_question_id) "
                      f"VALUES(({BotDB.__last_update_id_subquery__}), ?, ({BotDB.__last_tmp_question_id_subquery__}))",
                      (chat_id, chat_id, chat_id, chat_id))
-        self.increment_last_tmp_question_id(chat_id)
         self.update_last_session_and_last_action(chat_id, latest_action)
 
     def add_question_existing_info(self, chat_id: int, question_id: int):
@@ -493,7 +499,7 @@ class BotDB(Connection):
     #
     # new_answers
     def add_answer(self, chat_id: int):
-        self.execute("INSERT OR IGNORE INTO new_answers(update_id, chat_id, tmp_entity_id, tmp_question_id) "
+        self.execute("INSERT INTO new_answers(update_id, chat_id, tmp_entity_id, tmp_question_id) "
                      f"VALUES(({BotDB.__last_update_id_subquery__}), ?, ({BotDB.__last_tmp_entity_id_subquery__}), "
                      f"({BotDB.__last_tmp_question_id_subquery__}))",
                      (chat_id, chat_id, chat_id, chat_id, chat_id, chat_id))

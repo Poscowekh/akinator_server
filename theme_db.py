@@ -40,8 +40,12 @@ class ThemeDB(Connection):
         return self.execute(query, (theme,)).fetchone()[0]
 
     def db_path(self, theme, version: Version) -> str:
-        subquery = "SELECT id FROM themes WHERE theme==?"
-        query = f"SELECT path FROM versions WHERE theme_id=({subquery}) AND major==? AND minor==? AND micro==?"
+        subquery = "SELECT id FROM themes WHERE string==?"
+        query = str()
+        if version.micro is not None:
+            query = f"SELECT path FROM versions WHERE theme_id=({subquery}) AND major==? AND minor==? AND micro==?"
+        else:
+            query = f"SELECT path FROM versions WHERE theme_id=({subquery}) AND major==? AND minor==? AND micro IS (?)"
         return self.execute(query, (theme,) + version.to_tuple()).fetchone()[0]
 
     def dbs_to_delete(self, time_limit: datetime) -> list:
@@ -60,6 +64,7 @@ class ThemeDB(Connection):
 
     def create_new_version(self, theme: str, new_version: Version, available: bool = True):
         available_int = 1 if available else 0
+        new_version = Version(1, 0, 0) if new_version == Version(0, 0, 0) else new_version
         subquery = "SELECT id FROM themes WHERE string==?"
         query = "INSERT INTO versions(theme_id, major, minor, micro, path, creation_date, popularity, available) " \
                 f"VALUES(({subquery}), ?, ?, ?, ?, ?, 0, ?)"
@@ -84,8 +89,8 @@ class ThemeDB(Connection):
 
     def theme_exists(self, theme: str) -> int:
         query = "SELECT id FROM themes WHERE string==?"
-        id = self.execute(query, (theme,))
+        id = self.execute(query, (theme,)).fetchone()
         if id is None:
             return -1
         else:
-            return id
+            return id[0]

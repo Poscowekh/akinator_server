@@ -1,7 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="76fb16f7-5d54-4833-88dc-350dc55a4e7a" name="Default Changelist" comment="" />
+    <list default="true" id="76fb16f7-5d54-4833-88dc-350dc55a4e7a" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/BotAkinator.py" beforeDir="false" afterPath="$PROJECT_DIR$/BotAkinator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ConnectionClass.py" beforeDir="false" afterPath="$PROJECT_DIR$/ConnectionClass.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/VersionClass.py" beforeDir="false" afterPath="$PROJECT_DIR$/VersionClass.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/bot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bot/file.db" beforeDir="false" afterPath="$PROJECT_DIR$/bot/file.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bot_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/bot_db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/m1/0.0.0/file.db" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/m1/0.0.0/stats.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/neck/0.0.0/file.db" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/neck/0.0.0/stats.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/themes.db" beforeDir="false" afterPath="$PROJECT_DIR$/data/themes.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test.py" beforeDir="false" afterPath="$PROJECT_DIR$/test.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/theme_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/theme_db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/updates.py" beforeDir="false" afterPath="$PROJECT_DIR$/updates.py" afterDir="false" />
+    </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -16,7 +33,7 @@
     </option>
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/private" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="ProjectId" id="1x4dEW3ZGiMonoVWebHlUF8HCsu" />
   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
@@ -36,7 +53,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Python.bot">
+  <component name="RunManager" selected="Python.test">
     <configuration name="bot" type="PythonConfigurationType" factoryName="Python" temporary="true">
       <module name="akinator_server" />
       <option name="INTERPRETER_OPTIONS" value="" />

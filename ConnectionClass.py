@@ -132,7 +132,7 @@ class Connection(sqlConnection):
     def begin_transaction(self):
         self.execute("BEGIN TRANSACTION")
 
-    def __select__(self, table: str, columns: list = None, condition: str = None) -> Cursor:
+    def __select__(self, table: str, columns: list = None, condition: str = None, raw_string: str = None) -> Cursor:
         query = str()
 
         if columns is None:
@@ -150,7 +150,10 @@ class Connection(sqlConnection):
 
         cursor = self.cursor()
         try:
-            cursor = self.execute(query)
+            if raw_string is not None:
+                cursor = self.execute(query, (raw_string,))
+            else:
+                cursor = self.execute(query)
         except OperationalError as e:
             raise self.Error(self.Error.Type.arguments_error, sql_error=e, sql_query=query)
         except SQLError as e:
@@ -191,9 +194,9 @@ class Connection(sqlConnection):
             self.commit()
 
     def __insert__(self, table: str, columns: list, values: tuple, auto_commit: bool = True):
-        if len(columns) != len(values[0]):
+        if len(columns) != len(values):
             raise self.Error(self.Error.Type.arguments_error)
-        if not isinstance(values[0], tuple):
+        if not isinstance(values, tuple):
             values = ((value,) for value in values)
 
         query = str()
@@ -273,8 +276,8 @@ class Connection(sqlConnection):
                         ["entity_id", "question_id", "answer_value"],
                         (entity_id, question_id, answer_value))
 
-        self.stats.data["answer_count"] += 1
-        self.stats.write_data()
+        #self.stats.data["answer_count"] += 1
+        #self.stats.write_data()
 
         if auto_commit:
             self.commit()
@@ -305,6 +308,9 @@ class Connection(sqlConnection):
         self.commit()
 
     def insertmany_entities(self, values: list):
+        if not values:
+            return
+
         if (self.connection_type is self.Type.server and len(values[0]) != 4) or \
                 (self.connection_type is self.Type.client and len(values[0]) != 3) or \
                  (self.connection_type is self.Type.game and len(values[0]) != 3):
@@ -330,6 +336,9 @@ class Connection(sqlConnection):
         self.stats.write_data()
 
     def insertmany_questions(self, values: list):
+        if not values:
+            return
+
         if (self.connection_type.value <= 1 and len(values[0]) != 1) or \
                 (self.connection_type == self.Type.game and len(values[0]) != 2):
             raise self.Error(self.Error.Type.missing_args_error, values=values)
@@ -348,6 +357,9 @@ class Connection(sqlConnection):
         self.stats.write_data()
 
     def insertmany_answers(self, values: list):
+        if not values:
+            return
+
         if len(values[0]) != 3:
             raise self.Error(self.Error.Type.missing_args_error, values=values)
 
@@ -463,8 +475,8 @@ class Connection(sqlConnection):
                 self.stats.data = Layouts.Stats.Version.template_client.value
         self.stats.write_data()
 
-    def __search_string__(self, table: str, column: str, string: str) -> Cursor:
-        return self.__select__(table, [column], f"{column} LIKE '%{string}%'")
+    def __search_string__(self, table: str, column: str, string: str = None) -> Cursor:
+        return self.__select__(table, [column], f"{column} LIKE (?)", f'%{string}%')
 
     def search_name(self, name: str) -> list:
         return self.__search_string__("entities", "name", name).fetchall()
@@ -519,13 +531,17 @@ class Connection(sqlConnection):
     def insert_new_entity(self, name: str, desc: str) -> int:
         cur = self.cursor()
         cur.execute("INSERT INTO entities(name, description, base_rating, popularity) "
-                    "VALUE(?, ?, 0.0, 0)", (name, desc))
-        return cur.lastrowid
+                    "VALUES(?, ?, 0.0, 0)", (name, desc))
+        id = cur.lastrowid + 1
+        cur.close()
+        return id
 
-    def insert_new_question(self, text: str) -> int:
+    def insert_new_question(self, text: tuple) -> int:
         cur = self.cursor()
-        cur.execute("INSERT INTO questions(text) VALUE(?)", (text,))
-        return cur.lastrowid
+        cur.execute("INSERT INTO questions(text) VALUES(?)", text)
+        id = cur.lastrowid
+        cur.close()
+        return id
 
 
 def connect(connection_type: Connection.Type, theme: str, version: Version, path: str = None) -> Connection :

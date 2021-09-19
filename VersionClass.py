@@ -164,3 +164,6 @@ class Version():
 
     def __NE__(self, other) -> bool:
         return not self.__EQ__(other)
+
+    def __str__(self) -> str:
+        return self.to_string()

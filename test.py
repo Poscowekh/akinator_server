@@ -277,12 +277,26 @@ if __name__ == '__main__':
     for e_id, success, iteration in success_list:
         print("{:<6}{:<8}{}".format(e_id, success, iteration))"""
 
-    """from bot_db import BotDB
+    from bot_db import BotDB
+    from theme_db import ThemeDB
     from BotAkinator import BotAkinator
     bot_db = BotDB()
-    chat_id = bot_db.execute("SELECT chat_id FROM users").fetchone()[0]
-    akinator = BotAkinator("test", Version(1, 3), chat_id)
-    print(akinator.game_db.entities_answering_many_questions([1]))"""
+    thme_db = ThemeDB()
+    #serv_db = Connection(Connection.Type.server, "test", Version(1, 3, 5))
+    #print(serv_db)
+    #thme_db.execute("DELETE FROM versions WHERE micro IS NOT NULL")
+    #thme_db.execute("UPDATE themes SET latest_version_id=1")
+    #thme_db.execute("DELETE FROM themes WHERE string!=?", ("test",))
+    """print(bot_db.execute("SELECT * FROM updates").fetchall(), "\n",
+          bot_db.execute("SELECT * FROM users").fetchall(), "\n",
+          bot_db.execute("SELECT * FROM new_entities").fetchall(), "\n",
+          bot_db.execute("SELECT * FROM new_questions").fetchall(), "\n",
+          bot_db.execute("SELECT * FROM new_answers").fetchall(), "\n",
+          thme_db.execute("SELECT * FROM themes").fetchall(), "\n",
+          thme_db.execute("SELECT * FROM versions").fetchall())"""
+    #serv_db.close()
+    thme_db.close()
+    bot_db.close()
 
     from statistics import mean
     from math import log, tanh
@@ -333,3 +347,14 @@ if __name__ == '__main__':
     ylabel(f"a")"""
 
     #show()
+
+    """import os
+    import os.path
+    from os import listdir
+    from os.path import isfile, join
+
+    summa = 0
+    files = onlyfiles = [f for f in listdir(".") if isfile(join(".", f)) and f.endswith(".py")]
+    for file in files:
+        summa += sum(1 for line in open(file, "r"))
+    print(summa)"""

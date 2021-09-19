@@ -12,7 +12,7 @@ from ConnectionClass import Connection
 from file_skeleton import Layouts
 from theme_db import ThemeDB
 from updates import apply_update, latest_version
-from sqlite3 import PARSE_DECLTYPES, PARSE_COLNAMES
+from sqlite3 import PARSE_DECLTYPES, PARSE_COLNAMES, IntegrityError
 
 
 class PossibleActions(Enum):
@@ -122,7 +122,10 @@ class BotCommandHandler():
     def start(update: Update, context: CallbackContext):
         update.message.reply_text('Welcome to SimpleAkinatorBot!\nUse /help for more info')
         db = BotDB()
-        db.add_user(Bot.id_from_update(update, context), PossibleActions.start.value)
+        try:
+            db.add_user(Bot.id_from_update(update, context), PossibleActions.start.value)
+        except IntegrityError:  # the user already exists
+            db.clear_whole_session(Bot.id_from_update(update, context), PossibleActions.start.value)
         db.close()
 
     @staticmethod
@@ -212,6 +215,7 @@ Supported commands:
         chat_id = Bot.id_from_update(update, context)
         bot_db = BotDB(detect_types=PARSE_DECLTYPES | PARSE_COLNAMES)
         session_date = bot_db.get_session_date(chat_id)
+        bot_db.change_state(chat_id, PossibleActions.ask_update.value, 0, 4)
 
         if session_date - datetime.now() >= timedelta(days=1):
             # last session was long enough ago
@@ -231,9 +235,12 @@ Supported commands:
                 bot_db.update_last_session_and_last_action(chat_id, PossibleActions.ask_update_theme.value)
 
         elif theme_ is not None:
+            if theme_ not in available_themes():
+                context.bot.send_message(chat_id,
+                                         "Attention! This is a new theme and it will not have any entities in it. "
+                                         "It will only have the data you insert")
             context.bot.send_message(chat_id, "Great! Please, write the entity's name or surname (if it has one) or "
                                               "a nickname associated with it")
-            bot_db.change_state(chat_id, PossibleActions.ask_update.value, 0, 4)
             bot_db.add_update(Bot.id_from_update(update, context), PossibleActions.ask_entity_name.value)
             bot_db.set_latest_update_theme(chat_id, theme_)
             bot_db.set_update_theme(chat_id, theme_)
@@ -252,7 +259,8 @@ class BotUserAnswerHandler():
     @staticmethod
     def ask_update(update: Update, context: CallbackContext):
         chat_id = Bot.id_from_update(update, context)
-        context.bot.send_message(chat_id, "Could you, please, help the bot update its information data base?"
+        context.bot.send_message(chat_id, "Could you, please, help the bot update its information data base? "
+                                          "The answers you made will be used to adjust the existing data base"
                                           "\nUse /update to start the update"
                                           "\nUse /akinate to play again")
         bot_db = BotDB()
@@ -290,8 +298,8 @@ class BotUserAnswerHandler():
             matches_list = [str(match[0]) for match in matches_list]
             names = ",\n".join(matches_list)
             update.message.reply_text("Let's first check whether this entity already exists. "
-                                      "If one of this entities is the same as yours, please, write it's name.\n"
-                                      f"If it is not listed here just type \"No\"\n{names}")
+                                      f"If one of this entities is the same as yours, please, write it's name: {names}"
+                                      "\nIf your entity is not listed then rewrite its name")
             bot_db.update_last_session_and_last_action(chat_id, PossibleActions.ask_if_entity_matches.value)
 
         bot_db.close()
@@ -326,6 +334,8 @@ class BotUserAnswerHandler():
         bot_db.add_entity_desc(chat_id, PossibleActions.ask_entity_description.value, desc)
         given_answers = bot_db.get_given_answers(chat_id, ["question_id", "answer_value"])
         for id, value in given_answers:
+            if value == 0.0:
+                continue
             bot_db.add_answer(chat_id)
             bot_db.add_answer_existing_once(chat_id, id, value)
         bot_db.close()
@@ -365,9 +375,10 @@ class BotUserAnswerHandler():
             bot_db.update_last_session_and_last_action(chat_id, PossibleActions.ask_if_question_matches.value)
         else:
             matches_list = [str(match[0]) for match in matches_list]
-            texts = ",\n".join(matches_list)
+            texts = "\n".join(matches_list)
             update.message.reply_text("Let's first check whether this question already exists. "
-                                      f"If one of this questions is the same as yours, please, copy it's text:\n{texts}")
+                                      f"If one of this questions is the same as yours, please, copy it's text:\n{texts}"
+                                      f"If your question is not in the list just retype it")
             bot_db.update_last_session_and_last_action(chat_id, PossibleActions.ask_if_question_matches.value)
 
         bot_db.close()
@@ -376,6 +387,7 @@ class BotUserAnswerHandler():
     def question_matches(update: Update, context: CallbackContext, text: str = None):
         chat_id = Bot.id_from_update(update, context)
         bot_db = BotDB()
+
         if text is not None:
             context.bot.send_message(chat_id, "This is a new question")
             bot_db.add_question_text(chat_id, text)
@@ -384,7 +396,7 @@ class BotUserAnswerHandler():
             #context.bot.send_message(chat_id, "Now, please, add some more questions related to this entity if you can.")
             BotUserAnswerHandler.ask_answer(update, context)
         else:
-            BotUserAnswerHandler.ask_entity_desc(update, context)
+            BotUserAnswerHandler.ask_answer(update, context)
 
     @staticmethod
     def ask_answer(update: Update, context: CallbackContext):
@@ -583,16 +595,21 @@ class BotPollAnswerHandler():
         elif state == AkinatorState.MakeGuess.value:
             if answer_value == 1.0:
                 bot_db.victory(chat_id)
+                bot_db.close()
+                return
             else:
                 bot_db.add_wrong_guess(chat_id)
 
         elif state == AkinatorState.MakeLastGuess.value:  # same as MakeGuess for bot?
             if answer_value == 1.0:
                 bot_db.victory(chat_id)
+                bot_db.close()
+                return
             else:
                 bot_db.add_wrong_guess(chat_id)
 
-        elif state == AkinatorState.Victory.value:  # either game was finished successfully or just /update was called
+        elif state == AkinatorState.Victory.value or state == AkinatorState.GiveUp.value:
+            # either game was finished successfully or just /update was called
             latest_action = bot_db.get_last_action(chat_id)
 
             if latest_action == PossibleActions.ask_if_entity_matches.value:
@@ -603,18 +620,29 @@ class BotPollAnswerHandler():
 
             elif latest_action == PossibleActions.ask_if_question_matches.value:
                 if answer_value == 1.0:
-                    BotUserAnswerHandler.question_text(update, context, context.bot_data[poll_id]["additional_info"])
+                    BotUserAnswerHandler.question_matches(update, context, context.bot_data[poll_id]["additional_info"])
                 else:
                     BotUserAnswerHandler.question_matches(update, context)
+                bot_db.close()
+                return
 
             elif latest_action == PossibleActions.ask_answer.value:
                 BotUserAnswerHandler.new_answer(update, context, answer_value)
 
+            elif latest_action == PossibleActions.ask_update.value:
+                if answer_value == 1.0:
+                    BotUserAnswerHandler.ask_update_theme(update, context)
+                else:
+                    BotCommandHandler.stop(update, context)
+                    bot_db.update_last_session_and_last_action(chat_id, PossibleActions.start.value)
+
             elif latest_action == PossibleActions.ask_update_theme.value:
                 if answer_value == 1.0:
-                    BotCommandHandler.update(update, context, bot_db.get_latest_update_theme(chat_id))
+                    BotCommandHandler.update(update, context, bot_db.get_theme(chat_id))
                 else:
-                    context.bot.send_message("Please< specify the theme of update")
+                    context.bot.send_message(chat_id, "Please, type the theme you want to update")
+                    bot_db.close()
+                    return
 
             # not to call the akinator loop
             bot_db.close()
@@ -703,16 +731,18 @@ if __name__ == "__main__":
     #theme_db.drop()
     #theme_db.create_tables()
     #theme_db.create_new_theme("test", Version(1, 3))
+    #print(theme_db.execute("SELECT * FROM themes").fetchall())
+    #print(theme_db.execute("SELECT * FROM versions").fetchall())
     #theme_db.close()
 
     # init game info DB
     #info_db = Connection(Connection.Type.server, "test", Version(1, 3))
     #info_db.close()
 
-    # preinit bot DB
+    # clear user data
     bot_db = BotDB()
-    bot_db.drop()
-    bot_db.create_tables()
+    #bot_db.drop()
+    #bot_db.create_tables()
     bot_db.close()
 
     bot = Bot()

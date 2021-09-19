@@ -99,9 +99,10 @@ class BotAkinator():
         return id, name
 
     def last_guess(self) -> tuple:  # tuple[list[tuple[id, name]], int]
-        #ids_and_names = [(entity[0], self.game_db.entity_get_name(entity[0])) for entity in self.probable_entities]
-        #return ids_and_names, BotAkinator.guess_limit - self.guess_count
-        return self.guess()
+        id = self.game_db.execute(f"SELECT id FROM entities_{self.game_db.id} "
+                                  f"WHERE used==0 ORDER BY rating DESC").fetchone()[0]
+        name = self.game_db.entity_get_name(id)
+        return id, name
 
     def ask_question(self) -> tuple:  # tuple[id, text]
         id = self.probable_questions[0][0]
@@ -168,7 +169,7 @@ class BotAkinator():
         elif self.state == AkinatorState.MakeLastGuess:
             self.choose_chars()
 
-            if self.guess_count >= BotAkinator.guess_limit:
+            if self.guess_count >= BotAkinator.guess_limit or len(self.probable_entities) == 0:
                 self.state = AkinatorState.GiveUp
             else:
                 self.state = AkinatorState.MakeLastGuess
